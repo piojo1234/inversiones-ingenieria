@@ -112,7 +112,7 @@ export default function SignPage({ params }: { params: { contract_id: string } }
 
   const generatePaymentPlanHtml = (plan: any[]) => {
     if (!plan || plan.length === 0) return "<p><em>[Pendiente: No hay un plan de pagos asociado]</em></p>";
-    let rowsHtml = plan.map(cuota => `
+    const rowsHtml = plan.map(cuota => `
       <tr style="border-bottom: 1px solid #e5e7eb;">
         <td style="padding: 8px;">${cuota.numero_cuota}</td>
         <td style="padding: 8px;">${cuota.fecha_vencimiento}</td>

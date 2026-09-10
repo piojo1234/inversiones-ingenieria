@@ -28,6 +28,7 @@ export interface Database {
           rol?: 'Super Admin' | 'Cartera'
           created_at?: string
         }
+        Relationships: []
       }
       empresas: {
         Row: {
@@ -57,6 +58,7 @@ export interface Database {
           direccion?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       perfiles_empresas: {
         Row: {
@@ -74,6 +76,7 @@ export interface Database {
           empresa_id?: string
           created_at?: string
         }
+        Relationships: []
       }
       proyectos: {
         Row: {
@@ -100,6 +103,7 @@ export interface Database {
           ubicacion?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       inmuebles: {
         Row: {
@@ -144,6 +148,7 @@ export interface Database {
           linderos?: string | null
           tradicion?: string | null
         }
+        Relationships: []
       }
       clientes: {
         Row: {
@@ -182,6 +187,7 @@ export interface Database {
           direccion?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       plantillas_contratos: {
         Row: {
@@ -211,6 +217,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       contratos: {
         Row: {
@@ -227,11 +234,6 @@ export interface Database {
           estado_firma: 'Pendiente' | 'PENDIENTE' | 'Borrador' | 'Firmado' | 'FIRMADO' | 'Cancelado' | null
           pdf_url: string | null
           created_at: string
-          valor_cuota_inicial: number | null
-          num_cuotas_iniciales: number | null
-          valor_cuota_ordinaria: number | null
-          num_cuotas_ordinarias: number | null
-          tiene_extraordinarias: boolean | null
           monto_cuota_inicial: number | null
           numero_cuotas_iniciales: number | null
           monto_cuota_ordinaria: number | null
@@ -256,11 +258,6 @@ export interface Database {
           estado_firma?: 'Pendiente' | 'PENDIENTE' | 'Borrador' | 'Firmado' | 'FIRMADO' | 'Cancelado' | null
           pdf_url?: string | null
           created_at?: string
-          valor_cuota_inicial?: number | null
-          num_cuotas_iniciales?: number | null
-          valor_cuota_ordinaria?: number | null
-          num_cuotas_ordinarias?: number | null
-          tiene_extraordinarias?: boolean | null
           monto_cuota_inicial?: number | null
           numero_cuotas_iniciales?: number | null
           monto_cuota_ordinaria?: number | null
@@ -285,11 +282,6 @@ export interface Database {
           estado_firma?: 'Pendiente' | 'PENDIENTE' | 'Borrador' | 'Firmado' | 'FIRMADO' | 'Cancelado' | null
           pdf_url?: string | null
           created_at?: string
-          valor_cuota_inicial?: number | null
-          num_cuotas_iniciales?: number | null
-          valor_cuota_ordinaria?: number | null
-          num_cuotas_ordinarias?: number | null
-          tiene_extraordinarias?: boolean | null
           monto_cuota_inicial?: number | null
           numero_cuotas_iniciales?: number | null
           monto_cuota_ordinaria?: number | null
@@ -300,6 +292,7 @@ export interface Database {
           numero_cuotas_extraordinarias?: number | null
           dia_pago_mensual?: number | null
         }
+        Relationships: []
       }
       contratantes_contrato: {
         Row: {
@@ -335,6 +328,7 @@ export interface Database {
           firma_hash?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       plan_pagos: {
         Row: {
@@ -373,6 +367,7 @@ export interface Database {
           created_at?: string
           tipo_cuota?: string | null
         }
+        Relationships: []
       }
       proyecciones_recaudo: {
         Row: {
@@ -402,6 +397,7 @@ export interface Database {
           valor_historico_calculado?: number | null
           updated_at?: string
         }
+        Relationships: []
       }
       pagos_bitacora: {
         Row: {
@@ -434,6 +430,7 @@ export interface Database {
           registrado_por?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       gestion_cartera: {
         Row: {
@@ -463,7 +460,23 @@ export interface Database {
           proxima_accion?: string | null
           registrado_por?: string | null
         }
+        Relationships: []
       }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      empresas_del_usuario: {
+        Args: Record<string, never>
+        Returns: string[]
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }

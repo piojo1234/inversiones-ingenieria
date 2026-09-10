@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2 } from "lucide-react";
 
@@ -24,12 +25,25 @@ const THEME_COLORS = ["emerald-600", "blue-600", "amber-600", "purple-600"];
 
 const ACTIVE_COMPANY_STORAGE_KEY = "activeEmpresaId";
 
+// Rutas que no pertenecen a ninguna empresa. Deben coincidir con las
+// PUBLIC_PREFIXES de src/middleware.ts.
+const RUTAS_PUBLICAS = ["/login", "/firmar", "/auth"];
+
+// Marcador para las rutas públicas: ninguna de ellas lee la empresa activa,
+// pero el contexto tiene que existir para que useCompany no reviente.
+const EMPRESA_VACIA: Company = { id: "", name: "", nit: "" };
+
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [activeCompany, setActiveCompanyState] = useState<Company | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const pathname = usePathname();
+  const esRutaPublica = RUTAS_PUBLICAS.some(
+    (ruta) => pathname === ruta || pathname.startsWith(`${ruta}/`)
+  );
 
   useEffect(() => {
     async function fetchUserCompanies() {
@@ -108,8 +122,13 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    if (esRutaPublica) {
+      setLoading(false);
+      return;
+    }
+
     fetchUserCompanies();
-  }, []);
+  }, [esRutaPublica]);
 
   const setActiveCompany = (company: Company) => {
     setActiveCompanyState(company);
@@ -117,6 +136,19 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       window.localStorage.setItem(ACTIVE_COMPANY_STORAGE_KEY, company.id);
     }
   };
+
+  // En /login y /firmar no hay empresa que cargar. Antes este proveedor
+  // tapaba esas páginas con "Sin empresas asignadas", así que el formulario
+  // de acceso nunca llegaba a verse.
+  if (esRutaPublica) {
+    return (
+      <CompanyContext.Provider
+        value={{ activeCompany: EMPRESA_VACIA, setActiveCompany, companies: [], loading: false }}
+      >
+        {children}
+      </CompanyContext.Provider>
+    );
+  }
 
   if (loading) {
     return (

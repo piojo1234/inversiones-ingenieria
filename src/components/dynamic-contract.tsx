@@ -182,17 +182,17 @@ export function DynamicContract() {
   const cuotaOrdinariaMonto = cOrdPagos > 0 ? (saldoRestante / cOrdPagos) : 0;
 
   const calculateAmortization = () => {
-    let cuotas = [];
+    const cuotas = [];
     let counter = 1;
 
     // 1. Cuota Inicial
     const cIniPagos = Number(cuotaInicialPagos) || 1;
     if (cIniMontoTotal > 0 && cIniPagos > 0) {
       const montoPorPago = cIniMontoTotal / cIniPagos;
-      let baseDate = cuotaInicialFecha ? new Date(cuotaInicialFecha + "T12:00:00") : new Date();
+      const baseDate = cuotaInicialFecha ? new Date(cuotaInicialFecha + "T12:00:00") : new Date();
       
       for (let i = 0; i < cIniPagos; i++) {
-        let paymentDate = new Date(baseDate);
+        const paymentDate = new Date(baseDate);
         paymentDate.setMonth(paymentDate.getMonth() + i);
         
         cuotas.push({
@@ -212,12 +212,12 @@ export function DynamicContract() {
     const rate = withInterest ? interestRate / 100 : 0;
 
     if (saldoRestante > 0 && cOrdPagos > 0) {
-      let baseDate = cuotaOrdinariaFecha ? new Date(cuotaOrdinariaFecha + "T12:00:00") : new Date();
+      const baseDate = cuotaOrdinariaFecha ? new Date(cuotaOrdinariaFecha + "T12:00:00") : new Date();
       
       // Sistema Francés / Cuota Fija
-      let P = saldoRestante;
-      let i = rate;
-      let n = cOrdPagos;
+      const P = saldoRestante;
+      const i = rate;
+      const n = cOrdPagos;
       let C = i > 0 
         ? P * ((i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1))
         : P / n;
@@ -225,7 +225,7 @@ export function DynamicContract() {
       let currentBalance = P;
 
       for (let j = 0; j < n; j++) {
-        let paymentDate = new Date(baseDate);
+        const paymentDate = new Date(baseDate);
         paymentDate.setMonth(paymentDate.getMonth() + j);
         
         if (diaPagoMensual) {
@@ -234,7 +234,7 @@ export function DynamicContract() {
           paymentDate.setDate(Math.min(targetDay, daysInMonth));
         }
         
-        let interestPart = currentBalance * i;
+        const interestPart = currentBalance * i;
         let principalPart = C - interestPart;
         
         // Ajuste última cuota por redondeos
@@ -279,7 +279,7 @@ export function DynamicContract() {
       } else {
         const monto = Number(montoCuotaExtraordinaria) || 0;
         const count = Number(numeroCuotasExtraordinarias) || 0;
-        let baseDate = fechaInicioExtraordinarias ? new Date(fechaInicioExtraordinarias + "T12:00:00") : new Date();
+        const baseDate = fechaInicioExtraordinarias ? new Date(fechaInicioExtraordinarias + "T12:00:00") : new Date();
         
         let monthStep = 1;
         switch (frecuenciaExtraordinaria) {
@@ -290,7 +290,7 @@ export function DynamicContract() {
         }
 
         for (let i = 0; i < count; i++) {
-          let paymentDate = new Date(baseDate);
+          const paymentDate = new Date(baseDate);
           paymentDate.setMonth(paymentDate.getMonth() + (i * monthStep));
           
           if (diaPagoMensual) {

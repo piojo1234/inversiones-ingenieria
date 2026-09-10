@@ -3,14 +3,14 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCompany, Company } from "@/context/CompanyContext";
-import { useRole, Role } from "@/context/RoleContext";
+import { useRole } from "@/context/RoleContext";
 import { createClient } from "@/lib/supabase/client";
 import { Building2, Shield, ChevronDown, Check, LogOut } from "lucide-react";
 
 export function Header() {
   const router = useRouter();
   const { activeCompany, setActiveCompany, companies } = useCompany();
-  const { activeRole, setActiveRole } = useRole();
+  const { activeRole, nombre, loading: cargandoRol } = useRole();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isCompanyOpen, setIsCompanyOpen] = React.useState(false);
 
@@ -69,29 +69,19 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Role Controller Toggle */}
-        <div className="flex items-center bg-muted rounded-full p-1 border border-border">
-          <button
-            onClick={() => setActiveRole("Super Admin")}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
-              activeRole === "Super Admin"
-                ? "bg-background shadow-sm text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            Super Admin
-          </button>
-          <button
-            onClick={() => setActiveRole("Cartera")}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
-              activeRole === "Cartera"
-                ? "bg-background shadow-sm text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Cartera
-          </button>
+        {/* Usuario y rol. El rol viene de la tabla `perfiles` y no se puede
+            cambiar desde aquí: antes era un interruptor y cualquiera podía
+            ponerse Super Admin. */}
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-border bg-background">
+          <Shield className={`w-3.5 h-3.5 shrink-0 ${activeRole === "Super Admin" ? "text-primary" : "text-muted-foreground"}`} />
+          <div className="flex flex-col items-start leading-none">
+            {nombre && (
+              <span className="text-xs font-semibold">{nombre}</span>
+            )}
+            <span className={`text-[10px] text-muted-foreground ${nombre ? "mt-1" : ""}`}>
+              {cargandoRol ? "Cargando permisos..." : activeRole}
+            </span>
+          </div>
         </div>
 
         <button
