@@ -1,9 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-const PUBLIC_PREFIXES = ["/login", "/firmar", "/auth"];
+const PUBLIC_PREFIXES = ["/login", "/firmar", "/auth", "/politica-datos"];
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+  // Rutas públicas de consulta libre (sin requerir autenticación ni procesamiento de sesión):
+  if (isPublic && pathname !== "/login") {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({ request: { headers: request.headers } });
 
   const supabase = createServerClient(
@@ -29,9 +37,6 @@ export async function middleware(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
-  const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   if (!user && !isPublic) {
     const loginUrl = request.nextUrl.clone();

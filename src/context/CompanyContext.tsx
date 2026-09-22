@@ -27,7 +27,7 @@ const ACTIVE_COMPANY_STORAGE_KEY = "activeEmpresaId";
 
 // Rutas que no pertenecen a ninguna empresa. Deben coincidir con las
 // PUBLIC_PREFIXES de src/middleware.ts.
-const RUTAS_PUBLICAS = ["/login", "/firmar", "/auth"];
+const RUTAS_PUBLICAS = ["/login", "/firmar", "/auth", "/politica-datos"];
 
 // Marcador para las rutas públicas: ninguna de ellas lee la empresa activa,
 // pero el contexto tiene que existir para que useCompany no reviente.
@@ -38,12 +38,11 @@ const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [activeCompany, setActiveCompanyState] = useState<Company | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [loading, setLoading] = useState(true);
-
   const pathname = usePathname();
-  const esRutaPublica = RUTAS_PUBLICAS.some(
-    (ruta) => pathname === ruta || pathname.startsWith(`${ruta}/`)
+  const esRutaPublica = Boolean(
+    pathname && RUTAS_PUBLICAS.some((ruta) => pathname === ruta || pathname.startsWith(`${ruta}/`))
   );
+  const [loading, setLoading] = useState(!esRutaPublica);
 
   useEffect(() => {
     async function fetchUserCompanies() {

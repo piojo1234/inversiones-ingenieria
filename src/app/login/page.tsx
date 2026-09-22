@@ -3,7 +3,8 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Building2, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Building2, Loader2, ShieldCheck } from "lucide-react";
 
 function LoginForm() {
   const router = useRouter();
@@ -89,12 +90,22 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             Entrar
           </button>
         </form>
+
+        <div className="mt-6 pt-4 border-t border-border text-center">
+          <Link
+            href="/politica-datos"
+            className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center justify-center gap-1.5 py-1 px-2 rounded hover:bg-muted"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Consultar Política de Tratamiento de Datos (Pública)</span>
+          </Link>
+        </div>
       </div>
     </div>
   );

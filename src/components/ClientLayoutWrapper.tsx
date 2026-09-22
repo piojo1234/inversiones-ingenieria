@@ -8,9 +8,12 @@ import { Header } from "./Header";
 export function ClientLayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   
-  // Exclude Sidebar and Header for signature and auth pages
-  const isChromelessPage =
-    pathname.startsWith("/firmar") || pathname.startsWith("/login");
+  // Exclude Sidebar and Header for signature, auth, and public policy pages
+  const isChromelessPage = Boolean(
+    pathname?.startsWith("/firmar") || 
+    pathname?.startsWith("/login") || 
+    pathname?.startsWith("/politica-datos")
+  );
 
   if (isChromelessPage) {
     return <main className="min-h-screen bg-background">{children}</main>;

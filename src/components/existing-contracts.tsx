@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useCompany } from "@/context/CompanyContext";
 import { createClient } from "@/lib/supabase/client";
-import { Loader2, FileText, CheckCircle2, Clock, Copy, MessageCircle, Mail, Download, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Loader2, FileText, CheckCircle2, Clock, Copy, MessageCircle, Mail, Download, MoreVertical, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { EditContractModal } from "./edit-contract-modal";
 
 interface Contrato {
@@ -93,17 +93,18 @@ export function ExistingContracts() {
     window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
   };
 
+  const handleOpenContract = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    window.open(`/firmar/${id}`, '_blank');
+  };
+
   const handleDownload = (e: React.MouseEvent, contract: Contrato) => {
     e.stopPropagation();
-    if (contract.estado_firma === 'Firmado') {
-      const pdfUrl = (contract as any).pdf_url;
-      if (pdfUrl) {
-        window.open(pdfUrl, '_blank');
-      } else {
-        alert("Descargando PDF Consolidado del contrato firmado...");
-      }
+    const pdfUrl = (contract as any).pdf_url;
+    if (contract.estado_firma === 'Firmado' && pdfUrl) {
+      window.open(pdfUrl, '_blank');
     } else {
-      alert("Descargando Borrador en PDF...");
+      window.open(`/firmar/${contract.id}`, '_blank');
     }
   };
 
@@ -222,6 +223,14 @@ export function ExistingContracts() {
                           <Mail className="w-4 h-4" />
                         </button>
                         
+                        <button 
+                          onClick={(e) => handleOpenContract(e, contract.id)}
+                          className="p-1.5 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                          title="Abrir Contrato (Firma / Lectura)"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+
                         <button 
                           onClick={(e) => handleDownload(e, contract)}
                           className="p-1.5 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
