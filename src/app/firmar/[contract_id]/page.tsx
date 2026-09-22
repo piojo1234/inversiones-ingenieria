@@ -6,6 +6,7 @@ import { FileSignature, CheckCircle2, Building2, Loader2, Download, AlertCircle 
 import { createClient } from "@/lib/supabase/client";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { numeroALetrasCOP } from "@/lib/numero-a-letras";
 
 export default function SignPage({ params }: { params: { contract_id: string } }) {
   const [loading, setLoading] = useState(true);
@@ -148,12 +149,14 @@ export default function SignPage({ params }: { params: { contract_id: string } }
       baseHtml = rawData;
     } else if (Array.isArray(rawData)) {
       // Arreglo de cláusulas
-      baseHtml = rawData.map(c => `
+      baseHtml = rawData.map(c => {
+        const contentStr = (c.content || c.contenido || '').replace(/\n/g, '<br />');
+        return `
         <div style="margin-bottom: 1.5rem;">
           ${c.title || c.titulo ? `<h3 style="font-weight: bold; text-transform: uppercase; margin-bottom: 0.5rem;">${c.title || c.titulo}</h3>` : ''}
-          <div style="white-space: pre-wrap;">${c.content || c.contenido || ''}</div>
+          <div>${contentStr}</div>
         </div>
-      `).join('');
+      `}).join('');
     } else if (typeof rawData === "object" && rawData !== null) {
       if (rawData.texto) baseHtml = rawData.texto;
       else if (rawData.html) baseHtml = rawData.html;
@@ -161,16 +164,18 @@ export default function SignPage({ params }: { params: { contract_id: string } }
     }
 
     // 2. Extracción segura de datos
+    // 2. Extracción segura de datos
     const partes = ctObj?.contratantes_contrato || [];
-    const clienteObj = partes.length > 0 ? partes[0].clientes : {};
+    const nombresClientes = partes.map((p: any) => p.clientes?.nombre_razon_social).filter(Boolean).join(' y ');
+    const cedulasClientes = partes.map((p: any) => p.clientes?.documento).filter(Boolean).join(' y ');
     const inmueble = ctObj?.inmuebles || {};
 
     // 3. Reemplazo Seguro
     let parsed = baseHtml;
 
     // Reemplazo de Clientes
-    parsed = parsed.replace(/\{\{cliente_nombre\}\}/g, clienteObj?.nombre_razon_social || '');
-    parsed = parsed.replace(/\{\{cliente_cedula\}\}/g, clienteObj?.documento || '');
+    parsed = parsed.replace(/\{\{cliente_nombre\}\}/g, nombresClientes || '');
+    parsed = parsed.replace(/\{\{cliente_cedula\}\}/g, cedulasClientes || '');
 
     // Reemplazo de Inmuebles
     parsed = parsed.replace(/\{\{inmueble_identificador\}\}/g, inmueble?.identificador || '');
@@ -182,8 +187,60 @@ export default function SignPage({ params }: { params: { contract_id: string } }
     parsed = parsed.replace(/\{\{area_m2\}\}/gi, inmueble?.area_m2 ? inmueble.area_m2.toString() : '');
 
     // Reemplazo de Valores
-    parsed = parsed.replace(/\{\{valor_total_numero\}\}/g, ctObj?.valor_total ? `$${Number(ctObj.valor_total).toLocaleString('es-CO')}` : '');
-    parsed = parsed.replace(/\{\{valor_total_letras\}\}/g, ctObj?.valor_total_letras || '');
+    const isArrendamiento = ctObj?.tipo_contrato === 'Arrendamiento';
+    const firstCuotaOrdinaria = (plan || []).find((c: any) => c.tipo_cuota === 'ORDINARIA') || plan?.[0];
+    const canonMensual = Number(inmueble?.canon_arriendo) 
+      || Number(firstCuotaOrdinaria?.monto_cuota) 
+      || (ctObj?.valor_total && plan?.length ? ctObj.valor_total / plan.length : 1100000);
+    const duracionMeses = (plan || []).filter((c: any) => c.tipo_cuota === 'ORDINARIA').length || 12;
+    const diaPago = ctObj?.dia_pago_mensual || 5;
+
+    // Depósito de garantía
+    const cuotaInicialRow = (plan || []).find((c: any) => c.tipo_cuota === 'CUOTA_INICIAL');
+    const depositoGarantia = Number(ctObj?.monto_cuota_inicial) 
+      || Number(ctObj?.valor_cuota_inicial) 
+      || Number(cuotaInicialRow?.monto_cuota) 
+      || 500000; // Estándar de garantía $500.000 para C&R Group
+
+    const totalCanones = canonMensual * duracionMeses;
+    const totalCanonesNumero = `$${Number(totalCanones).toLocaleString('es-CO')}`;
+    const totalCanonesLetras = numeroALetrasCOP(totalCanones);
+
+    const depositoGarantiaNumero = `$${Number(depositoGarantia).toLocaleString('es-CO')}`;
+    const depositoGarantiaLetras = numeroALetrasCOP(depositoGarantia);
+
+    const canonMensualNumero = `$${Number(canonMensual).toLocaleString('es-CO')}`;
+    const canonMensualLetras = numeroALetrasCOP(canonMensual);
+
+    const valorTotalNumero = ctObj?.valor_total 
+      ? `$${Number(ctObj.valor_total).toLocaleString('es-CO')}` 
+      : `$${Number(totalCanones + depositoGarantia).toLocaleString('es-CO')}`;
+    const valorTotalLetras = ctObj?.valor_total_letras || numeroALetrasCOP(ctObj?.valor_total || (totalCanones + depositoGarantia));
+
+    // Reemplazos de Arrendamiento
+    parsed = parsed.replace(/\{\{canon_mensual_numero\}\}/g, canonMensualNumero);
+    parsed = parsed.replace(/\{\{canon_mensual_letras\}\}/g, canonMensualLetras);
+    parsed = parsed.replace(/\{\{total_canones_numero\}\}/g, totalCanonesNumero);
+    parsed = parsed.replace(/\{\{total_canones_letras\}\}/g, totalCanonesLetras);
+    parsed = parsed.replace(/\{\{deposito_garantia_numero\}\}/g, depositoGarantiaNumero);
+    parsed = parsed.replace(/\{\{deposito_garantia_letras\}\}/g, depositoGarantiaLetras);
+    parsed = parsed.replace(/\{\{duracion_meses\}\}/g, duracionMeses.toString());
+    parsed = parsed.replace(/\{\{dia_pago_mensual\}\}/g, diaPago.toString());
+
+    // Si el texto de la plantilla original aún decía "valor mensual de la renta... {{valor_total...}}"
+    if (isArrendamiento) {
+      parsed = parsed.replace(
+        /El valor mensual de la renta por concepto de arrendamiento y administración objeto de este contrato, es la suma de:\s*\{\{valor_total_letras\}\}\s*\(\{\{valor_total_numero\}\}\)/gi,
+        `El valor mensual de la renta por concepto de arrendamiento y administración objeto de este contrato, es la suma de: ${canonMensualLetras} (${canonMensualNumero}), para un valor total de ${valorTotalLetras} (${valorTotalNumero}) durante los ${duracionMeses} meses de vigencia del contrato`
+      );
+      parsed = parsed.replace(
+        /PRECIO O CANON:\s*\{\{valor_total_letras\}\}\s*\(\{\{valor_total_numero\}\}\)/gi,
+        `PRECIO O CANON MENSUAL: ${canonMensualLetras} (${canonMensualNumero})`
+      );
+    }
+
+    parsed = parsed.replace(/\{\{valor_total_numero\}\}/g, valorTotalNumero);
+    parsed = parsed.replace(/\{\{valor_total_letras\}\}/g, valorTotalLetras);
     parsed = parsed.replace(/\{\{tasa_interes_mora\}\}/g, ctObj?.tasa_interes_mora || '2.5');
 
     // Fechas
@@ -193,15 +250,16 @@ export default function SignPage({ params }: { params: { contract_id: string } }
     parsed = parsed.replace(/\{\{fecha_anio\}\}/g, fecha.getFullYear().toString());
 
     // Reemplazo del Plan de Pagos
-    parsed = parsed.replace(/\{\{PLAN_PAGOS_TABLA\}\}/gi, generatePaymentPlanHtml(plan));
+    const tableHtml = generatePaymentPlanHtml(plan);
+    parsed = parsed.replace(/(<br \/>\s*)*\{\{PLAN_PAGOS_TABLA\}\}(\s*<br \/>)*/gi, `<div style="margin: 1rem 0;">${tableHtml}</div>`);
 
-    // Fix basic line breaks if it's plaintext without HTML tags
-    if (!parsed.includes('<p>') && !parsed.includes('<div>') && !parsed.includes('<br')) {
+    // Fix basic line breaks if it's plaintext without HTML tags (already done for array, but fallback for strings)
+    if (typeof rawData === "string" && !parsed.includes('<p>') && !parsed.includes('<div>') && !parsed.includes('<br')) {
       parsed = parsed.replace(/\n/g, '<br />');
     }
 
     // Limpieza final de cualquier otro marcador {{...}} residual o nulo
-    parsed = parsed.replace(/\{\{[^}]+\}\}/g, '');
+    parsed = parsed.replace(/\{\{[^}]+\}\}/g, '___________');
 
     return parsed;
   };

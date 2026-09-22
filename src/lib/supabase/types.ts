@@ -243,6 +243,13 @@ export interface Database {
           monto_cuota_extraordinaria: number | null
           numero_cuotas_extraordinarias: number | null
           dia_pago_mensual: number | null
+          numero_factura: string | null
+          fecha_factura: string | null
+          numero_escritura: string | null
+          fecha_escritura: string | null
+          notaria_escritura: string | null
+          estado_escrituracion: string | null
+          observaciones_escrituracion: string | null
         }
         Insert: {
           id?: string
@@ -267,6 +274,13 @@ export interface Database {
           monto_cuota_extraordinaria?: number | null
           numero_cuotas_extraordinarias?: number | null
           dia_pago_mensual?: number | null
+          numero_factura?: string | null
+          fecha_factura?: string | null
+          numero_escritura?: string | null
+          fecha_escritura?: string | null
+          notaria_escritura?: string | null
+          estado_escrituracion?: string | null
+          observaciones_escrituracion?: string | null
         }
         Update: {
           id?: string
@@ -291,6 +305,13 @@ export interface Database {
           monto_cuota_extraordinaria?: number | null
           numero_cuotas_extraordinarias?: number | null
           dia_pago_mensual?: number | null
+          numero_factura?: string | null
+          fecha_factura?: string | null
+          numero_escritura?: string | null
+          fecha_escritura?: string | null
+          notaria_escritura?: string | null
+          estado_escrituracion?: string | null
+          observaciones_escrituracion?: string | null
         }
         Relationships: []
       }

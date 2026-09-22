@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { useCompany } from "@/context/CompanyContext";
 import { createClient } from "@/lib/supabase/client";
-import { Loader2, FileText, CheckCircle2, Clock, Copy, MessageCircle, Mail, Download, MoreVertical } from "lucide-react";
+import { Loader2, FileText, CheckCircle2, Clock, Copy, MessageCircle, Mail, Download, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { EditContractModal } from "./edit-contract-modal";
 
 interface Contrato {
   id: string;
@@ -25,46 +26,49 @@ export function ExistingContracts() {
   const { activeCompany } = useCompany();
   const [contracts, setContracts] = useState<Contrato[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [editingContractId, setEditingContractId] = useState<string | null>(null);
+
+  const fetchContracts = async () => {
+    setLoading(true);
+    const supabase = createClient();
+    
+    try {
+      const { data, error } = await supabase
+        .from('contratos')
+        .select(`
+          id, 
+          tipo_contrato, 
+          fecha_inicio, 
+          valor_total, 
+          estado_firma,
+          inmuebles ( identificador ),
+          contratantes_contrato ( 
+            clientes ( nombre_razon_social ) 
+          )
+        `)
+        .eq('empresa_id', activeCompany.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      if (data) {
+        setContracts(data as unknown as Contrato[]);
+      } else {
+        setContracts([]);
+      }
+    } catch (error) {
+      console.error("Error fetching contracts:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchContracts() {
-      setLoading(true);
-      const supabase = createClient();
-      
-      try {
-        const { data, error } = await supabase
-          .from('contratos')
-          .select(`
-            id, 
-            tipo_contrato, 
-            fecha_inicio, 
-            valor_total, 
-            estado_firma,
-            inmuebles ( identificador ),
-            contratantes_contrato ( 
-              clientes ( nombre_razon_social ) 
-            )
-          `)
-          .eq('empresa_id', activeCompany.id)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        
-        if (data) {
-          setContracts(data as unknown as Contrato[]);
-        } else {
-          setContracts([]);
-        }
-      } catch (error) {
-        console.error("Error fetching contracts:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     if (activeCompany?.id) {
       fetchContracts();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompany]);
 
   const handleCopyLink = (e: React.MouseEvent, id: string) => {
@@ -100,6 +104,29 @@ export function ExistingContracts() {
       }
     } else {
       alert("Descargando Borrador en PDF...");
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!window.confirm("¿Estás seguro de que deseas eliminar este contrato? Esta acción no se puede deshacer y borrará también el plan de pagos asociado.")) return;
+    
+    try {
+      const supabase = createClient();
+      
+      // Delete relationships first (plan_pagos, contratantes_contrato)
+      await supabase.from('plan_pagos').delete().eq('contrato_id', id);
+      await supabase.from('contratantes_contrato').delete().eq('contrato_id', id);
+      
+      // Finally delete the contract
+      const { error } = await supabase.from('contratos').delete().eq('id', id);
+      if (error) throw error;
+      
+      alert("Contrato eliminado exitosamente.");
+      fetchContracts();
+    } catch (error: any) {
+      console.error("Error deleting contract:", error);
+      alert("Hubo un error al eliminar el contrato: " + error.message);
     }
   };
 
@@ -202,6 +229,29 @@ export function ExistingContracts() {
                         >
                           <Download className="w-4 h-4" />
                         </button>
+                        
+                        {contract.estado_firma !== 'Firmado' && (
+                          <>
+                            <div className="w-px h-4 bg-border mx-1"></div>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingContractId(contract.id);
+                              }}
+                              className="p-1.5 hover:bg-blue-500/10 rounded-md text-muted-foreground hover:text-blue-600 transition-colors"
+                              title="Editar Contrato"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={(e) => handleDelete(e, contract.id)}
+                              className="p-1.5 hover:bg-red-500/10 rounded-md text-muted-foreground hover:text-red-600 transition-colors"
+                              title="Eliminar Contrato"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -211,6 +261,16 @@ export function ExistingContracts() {
           </table>
         </div>
       )}
+      
+      <EditContractModal 
+        isOpen={!!editingContractId}
+        contractId={editingContractId}
+        onClose={() => setEditingContractId(null)}
+        onSuccess={() => {
+          setEditingContractId(null);
+          fetchContracts();
+        }}
+      />
     </div>
   );
 }

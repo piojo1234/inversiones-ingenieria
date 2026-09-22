@@ -23,7 +23,14 @@ interface Participant {
   telefono: string;
 }
 
-export function DynamicContract() {
+interface EditContractModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  contractId: string | null;
+}
+
+export function EditContractModal({ isOpen, onClose, onSuccess, contractId }: EditContractModalProps) {
   const router = useRouter();
   const { activeCompany } = useCompany();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -39,7 +46,6 @@ export function DynamicContract() {
   const [cuotaInicialFecha, setCuotaInicialFecha] = useState<string>("");
 
   const [cuotaOrdinariaPagos, setCuotaOrdinariaPagos] = useState<number | "">("");
-  const [montoCuotaOrdinaria, setMontoCuotaOrdinaria] = useState<number | "">("");
   const [cuotaOrdinariaFecha, setCuotaOrdinariaFecha] = useState<string>("");
   const [diaPagoMensual, setDiaPagoMensual] = useState<number | "">(21);
 
@@ -59,21 +65,93 @@ export function DynamicContract() {
     { id: "1", tipoPersona: "Persona Natural", nombreCompleto: "", documento: "", razonSocial: "", nit: "", representanteLegal: "", documentoRepresentante: "", rolContractual: "Comprador Principal", correo: "", telefono: "" }
   ]);
   
-  const [contractId, setContractId] = useState<string | null>(null);
+  const [currentContractId, setCurrentContractId] = useState<string | null>(null);
 
   const [clientsList, setClientsList] = useState<ClientData[]>([]);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
-
+  
+  // Load existing contract data
   useEffect(() => {
-    if (activeCompany?.id === '00000000-0000-0000-0000-000000000003') {
-      setTipoContrato("Arrendamiento");
-      setParticipants(prev => prev.map((p, idx) => idx === 0 && (p.rolContractual === "Comprador Principal" || !p.rolContractual) ? { ...p, rolContractual: "Arrendatario" } : p));
-    } else {
-      setTipoContrato("Compraventa");
-      setParticipants(prev => prev.map((p, idx) => idx === 0 && (p.rolContractual === "Arrendatario" || !p.rolContractual) ? { ...p, rolContractual: "Comprador Principal" } : p));
+    if (!isOpen || !contractId || !activeCompany?.id) return;
+    
+    async function loadContract() {
+      const supabase = createClient();
+      const { data: ct, error } = await supabase
+        .from('contratos')
+        .select(`
+          *,
+          plan_pagos ( * ),
+          contratantes_contrato (
+            id, rol_contratante,
+            clientes ( id, tipo_persona, documento, nombre_razon_social, rep_legal_nombre, rep_legal_documento, correo, telefono )
+          )
+        `)
+        .eq('id', contractId!)
+        .single();
+        
+      if (error) {
+        console.error("Error loading contract:", error);
+        return;
+      }
+      
+      const ctAny = ct as any;
+      setCurrentContractId(ctAny.id);
+      setTipoContrato(ctAny.tipo_contrato);
+      setSelectedInmuebleId(ctAny.inmueble_id);
+      setAmount(ctAny.valor_total);
+      setWithInterest(ctAny.tiene_intereses || false);
+      setInterestRate(ctAny.tasa_interes_corriente || 2.0);
+      setMoraRate(ctAny.tasa_interes_mora || 3.0);
+      
+      setTieneExtraordinarias(!!ctAny.frecuencia_extraordinaria);
+      setFrecuenciaExtraordinaria(ctAny.frecuencia_extraordinaria || "Semestral");
+      setMontoCuotaExtraordinaria(ctAny.monto_cuota_extraordinaria || "");
+      setNumeroCuotasExtraordinarias(ctAny.numero_cuotas_extraordinarias || "");
+      setDiaPagoMensual(ctAny.dia_pago_mensual || 21);
+      
+      // Load Participants
+      if (ctAny.contratantes_contrato && ctAny.contratantes_contrato.length > 0) {
+        const loadedParts = ctAny.contratantes_contrato.map((p: any) => {
+          const client = p.clientes || {};
+          const isNatural = client.tipo_persona === 'Natural';
+          return {
+            id: p.id,
+            tipoPersona: isNatural ? "Persona Natural" : "Persona Jurídica",
+            nombreCompleto: isNatural ? client.nombre_razon_social : "",
+            documento: isNatural ? client.documento : "",
+            razonSocial: isNatural ? "" : client.nombre_razon_social,
+            nit: isNatural ? "" : client.documento,
+            representanteLegal: client.rep_legal_nombre || "",
+            documentoRepresentante: client.rep_legal_documento || "",
+            rolContractual: p.rol_contratante || "Comprador Principal",
+            correo: client.correo || "",
+            telefono: client.telefono || ""
+          };
+        });
+        setParticipants(loadedParts);
+      }
+      
+      // Load Payment Plan to prefill basic fields (heuristic)
+      if (ctAny.plan_pagos && ctAny.plan_pagos.length > 0) {
+        const pp = ctAny.plan_pagos;
+        const iniciales = pp.filter((p:any) => p.tipo_cuota === 'CUOTA_INICIAL');
+        if (iniciales.length > 0) {
+          setCuotaInicialPagos(iniciales.length);
+          setCuotaInicialMonto(iniciales.reduce((acc: number, p: any) => acc + Number(p.monto_cuota), 0));
+          setCuotaInicialFecha(iniciales[0].fecha_vencimiento);
+        }
+        
+        const ordinarias = pp.filter((p:any) => p.tipo_cuota === 'ORDINARIA');
+        if (ordinarias.length > 0) {
+          setCuotaOrdinariaPagos(ordinarias.length);
+          setCuotaOrdinariaFecha(ordinarias[0].fecha_vencimiento);
+        }
+      }
     }
-  }, [activeCompany?.id]);
+    
+    loadContract();
+  }, [isOpen, contractId, activeCompany]);
 
   useEffect(() => {
     async function fetchClients() {
@@ -108,7 +186,7 @@ export function DynamicContract() {
         // 2. Fetch inmuebles for these proyectos
         const { data, error } = await supabase
           .from('inmuebles')
-          .select('id, identificador, precio_venta, canon_arriendo, estado')
+          .select('id, identificador, precio_venta, estado')
           .in('proyecto_id', proyectoIds)
           .in('estado', ['Disponible', 'Reservado'])
           .order('identificador', { ascending: true });
@@ -117,7 +195,7 @@ export function DynamicContract() {
           console.warn("Error fetching by proyecto_id, attempting fallback...", error);
           const { data: fallbackData, error: fallbackError } = await (supabase
             .from('inmuebles') as any)
-            .select('id, identificador, precio_venta, canon_arriendo, estado')
+            .select('id, identificador, precio_venta, estado')
             .in('estado', ['Disponible', 'Reservado'])
             .order('identificador', { ascending: true });
             
@@ -144,29 +222,17 @@ export function DynamicContract() {
       setAmount("");
       return;
     }
-    const selected: any = inmuebles.find(i => i.id === id);
-    if (selected) {
-      if (tipoContrato === 'Arrendamiento') {
-        const canon = Number(selected.canon_arriendo) || Number(selected.precio_venta) || 1100000;
-        const meses = Number(cuotaOrdinariaPagos) || 12;
-        const deposito = 500000; // Depósito estándar de garantía para C&R Group
-        setCuotaInicialMonto(deposito);
-        setCuotaInicialPagos(1);
-        setCuotaOrdinariaPagos(meses);
-        setMontoCuotaOrdinaria(canon);
-        setAmount((canon * meses) + deposito);
-      } else if (selected.precio_venta) {
-        setAmount(selected.precio_venta);
-      }
+    const selected = inmuebles.find(i => i.id === id);
+    if (selected && selected.precio_venta) {
+      setAmount(selected.precio_venta);
     }
   };
 
   const addParticipant = () => {
     if (participants.length >= 4) return;
-    const defaultRol = tipoContrato === 'Arrendamiento' ? "Deudor Solidario" : "Co-propietario";
     setParticipants([
       ...participants,
-      { id: Date.now().toString(), tipoPersona: "Persona Natural", nombreCompleto: "", documento: "", razonSocial: "", nit: "", representanteLegal: "", documentoRepresentante: "", rolContractual: defaultRol, correo: "", telefono: "" }
+      { id: Date.now().toString(), tipoPersona: "Persona Natural", nombreCompleto: "", documento: "", razonSocial: "", nit: "", representanteLegal: "", documentoRepresentante: "", rolContractual: "Co-propietario", correo: "", telefono: "" }
     ]);
   };
 
@@ -249,7 +315,7 @@ export function DynamicContract() {
           id: `ini-${i}`,
           numero: counter++,
           tipo_cuota: 'CUOTA_INICIAL',
-          concepto: tipoContrato === 'Arrendamiento' ? 'Depósito de Garantía (Servicios Públicos)' : `Cuota Inicial ${i + 1}/${cIniPagos}`,
+          concepto: `Cuota Inicial ${i + 1}/${cIniPagos}`,
           fecha: paymentDate.toISOString().split('T')[0],
           principal: montoPorPago,
           interest: 0,
@@ -298,8 +364,8 @@ export function DynamicContract() {
         cuotas.push({
           id: `ord-${j}`,
           numero: counter++,
-          tipo_cuota: tipoContrato === 'Arrendamiento' ? 'ORDINARIA' : 'ORDINARIA',
-          concepto: tipoContrato === 'Arrendamiento' ? `Canon Mes #${j + 1}` : `Ordinaria #${j + 1}`,
+          tipo_cuota: 'ORDINARIA',
+          concepto: `Ordinaria #${j + 1}`,
           fecha: paymentDate.toISOString().split('T')[0],
           principal: principalPart,
           interest: interestPart,
@@ -404,36 +470,36 @@ export function DynamicContract() {
       }
     }
 
+    if (!currentContractId) {
+      alert("No se encontró el identificador del contrato.");
+      return;
+    }
+
     const supabase = createClient();
     setIsSubmitting(true);
 
     try {
-      // 1. Insert Contract
-      const { data: ctData, error: ctError } = await (supabase.from('contratos') as any)
-        .insert([{
-          id: crypto.randomUUID(),
-          empresa_id: activeCompany.id,
+      // 1. Update Contract instead of Insert
+      const { error: ctError } = await (supabase.from('contratos') as any)
+        .update({
           inmueble_id: selectedInmuebleId,
           tipo_contrato: tipoContrato,
-          fecha_inicio: new Date().toISOString(),
-          valor_total: financedTotal,
+          valor_total: targetTotal,
           tiene_intereses: withInterest,
           tasa_interes_corriente: withInterest ? interestRate : null,
           tasa_interes_mora: moraRate,
-          estado_firma: 'Pendiente',
-          // New Metadata fields mapped as requested
           frecuencia_extraordinaria: tieneExtraordinarias ? frecuenciaExtraordinaria : null,
           monto_cuota_extraordinaria: tieneExtraordinarias && frecuenciaExtraordinaria !== 'Personalizada' ? Number(montoCuotaExtraordinaria) || 0 : null,
           numero_cuotas_extraordinarias: tieneExtraordinarias && frecuenciaExtraordinaria !== 'Personalizada' ? Number(numeroCuotasExtraordinarias) || 0 : null,
           dia_pago_mensual: Number(diaPagoMensual) || null
-        }])
-        .select()
-        .single();
+        })
+        .eq('id', currentContractId);
         
       if (ctError) throw ctError;
-      const dbContractId = ctData.id;
 
-      // 2. Upsert Clients and link them to the contract
+      // 2. Upsert Clients and link them to the contract (Delete old ones first to be safe, or just clear and insert)
+      await supabase.from('contratantes_contrato').delete().eq('contrato_id', currentContractId);
+      
       for (const p of participants) {
         const isNatural = p.tipoPersona === "Persona Natural";
         const clienteRow = {
@@ -455,7 +521,7 @@ export function DynamicContract() {
 
         const { error: contratanteError } = await (supabase.from('contratantes_contrato') as any)
           .insert({
-            contrato_id: dbContractId,
+            contrato_id: currentContractId,
             cliente_id: clienteData.id,
             rol_contratante: p.rolContractual,
           });
@@ -463,9 +529,11 @@ export function DynamicContract() {
         if (contratanteError) throw contratanteError;
       }
 
-      // 3. Insert Payment Plan
+      // 3. Delete Old Payment Plan and Insert New One
+      await supabase.from('plan_pagos').delete().eq('contrato_id', currentContractId);
+      
       const mappedSchedule = schedule.map(row => ({
-        contrato_id: dbContractId,
+        contrato_id: currentContractId,
         numero_cuota: row.numero,
         fecha_vencimiento: row.fecha,
         monto_cuota: row.payment,
@@ -480,46 +548,43 @@ export function DynamicContract() {
 
       if (planError) throw planError;
 
-      setContractId(dbContractId);
-      alert(`Contrato generado y guardado exitosamente.`);
-      router.push('/contracts');
-      router.refresh();
+      alert(`Contrato actualizado exitosamente.`);
+      onSuccess();
+      onClose();
     } catch (error: any) {
-      console.error("Error generating contract:", error);
-      alert("Hubo un error al generar el contrato: " + error.message);
+      console.error("Error updating contract:", error);
+      alert("Hubo un error al actualizar el contrato: " + error.message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleCopyLink = () => {
-    if (!contractId) return;
-    const link = `${window.location.origin}/firmar/${contractId}`;
-    navigator.clipboard.writeText(link);
-    alert("Enlace copiado al portapapeles: " + link);
-  };
+  if (!isOpen) return null;
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
-      {/* Form Section */}
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-heading font-semibold flex items-center gap-2">
-              <FilePlus2 className="w-5 h-5 text-primary" />
-              Generador de Contratos
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Complete los datos para generar el documento.
-            </p>
-          </div>
-          {contractId && (
-            <button onClick={handleCopyLink} className="flex items-center gap-2 bg-secondary/10 text-secondary hover:bg-secondary/20 px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
-              <LinkIcon className="w-4 h-4" />
-              Enlace de Firma
-            </button>
-          )}
-        </div>
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-7xl shadow-xl my-8 relative">
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 text-muted-foreground hover:bg-muted p-2 rounded-full transition-colors"
+        >
+          &times; Cerrar
+        </button>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Form Section */}
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-heading font-semibold flex items-center gap-2">
+                  <FilePlus2 className="w-5 h-5 text-primary" />
+                  Editar Contrato Pendiente
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Modifique los datos y el plan de pagos del contrato.
+                </p>
+              </div>
+            </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-2">
@@ -537,7 +602,7 @@ export function DynamicContract() {
                 )}
                 {inmuebles.map((inm) => (
                   <option key={inm.id} value={inm.id}>
-                    {inm.identificador} {tipoContrato === 'Arrendamiento' && inm.canon_arriendo ? `- Canon: $${Number(inm.canon_arriendo).toLocaleString('es-CO')}/mes` : `- $${(inm.precio_venta || 0).toLocaleString('es-CO')}`}
+                    {inm.identificador} - ${(inm.precio_venta || 0).toLocaleString('es-CO')}
                   </option>
                 ))}
               </select>
@@ -573,7 +638,7 @@ export function DynamicContract() {
               className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              {tipoContrato === 'Arrendamiento' ? "Agregar Arrendatario / Deudor Solidario" : "Agregar Comprador/Garante"}
+              Agregar Comprador/Garante
             </button>
           </div>
           
@@ -754,24 +819,14 @@ export function DynamicContract() {
           
           {/* 1. Cuota Inicial */}
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-              {tipoContrato === 'Arrendamiento' ? "1. Depósito de Garantía (Servicios Públicos)" : "1. Cuota Inicial"}
-            </h4>
+            <h4 className="text-xs font-semibold uppercase text-muted-foreground">1. Cuota Inicial</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium">
-                  {tipoContrato === 'Arrendamiento' ? "Monto Depósito de Garantía ($)" : "Monto Total Inicial"}
-                </label>
+                <label className="text-xs font-medium">Monto Total Inicial</label>
                 <input 
                   type="number" 
                   value={cuotaInicialMonto === "" ? "" : cuotaInicialMonto}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? "" : Number(e.target.value);
-                    setCuotaInicialMonto(val);
-                    if (tipoContrato === 'Arrendamiento') {
-                      setAmount((Number(montoCuotaOrdinaria) || 0) * (Number(cuotaOrdinariaPagos) || 0) + (Number(val) || 0));
-                    }
-                  }}
+                  onChange={(e) => setCuotaInicialMonto(e.target.value === "" ? "" : Number(e.target.value))}
                   className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
                   placeholder="0"
                 />
@@ -801,9 +856,7 @@ export function DynamicContract() {
           {/* 2. Cuotas Ordinarias */}
           <div className="space-y-3 pt-3 border-t border-border/50">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                {tipoContrato === 'Arrendamiento' ? "2. Cánones Mensuales de Arrendamiento" : "2. Financiación Ordinaria (Mensualidades)"}
-              </h4>
+              <h4 className="text-xs font-semibold uppercase text-muted-foreground">2. Financiación Ordinaria (Mensualidades)</h4>
               <span className="text-xs font-medium text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded">
                 Saldo: ${saldoRestante.toLocaleString('es-CO')}
               </span>
@@ -811,20 +864,12 @@ export function DynamicContract() {
             
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium">
-                  {tipoContrato === 'Arrendamiento' ? "Meses de Contrato" : "N° de Cuotas (Meses)"}
-                </label>
+                <label className="text-xs font-medium">N° de Cuotas (Meses)</label>
                 <input 
                   type="number" 
                   min="0"
                   value={cuotaOrdinariaPagos === "" ? "" : cuotaOrdinariaPagos}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? "" : Number(e.target.value);
-                    setCuotaOrdinariaPagos(val);
-                    if (tipoContrato === 'Arrendamiento') {
-                      setAmount((Number(montoCuotaOrdinaria) || 0) * (Number(val) || 0) + (Number(cuotaInicialMonto) || 0));
-                    }
-                  }}
+                  onChange={(e) => setCuotaOrdinariaPagos(e.target.value === "" ? "" : Number(e.target.value))}
                   className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
                 />
               </div>
@@ -850,185 +895,144 @@ export function DynamicContract() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium">
-                  {tipoContrato === 'Arrendamiento' ? "Canon Mensual ($)" : "Valor Cuota Mensual"}
-                </label>
-                {tipoContrato === 'Arrendamiento' ? (
-                  <input 
-                    type="number" 
-                    value={montoCuotaOrdinaria === "" ? "" : montoCuotaOrdinaria}
-                    onChange={(e) => {
-                      const val = e.target.value === "" ? "" : Number(e.target.value);
-                      setMontoCuotaOrdinaria(val);
-                      if (tipoContrato === 'Arrendamiento') {
-                        setAmount((Number(val) || 0) * (Number(cuotaOrdinariaPagos) || 0) + (Number(cuotaInicialMonto) || 0));
-                      }
-                    }}
-                    className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
-                    placeholder="0"
-                  />
-                ) : (
-                  <div className="border border-border bg-muted/50 rounded-md px-2 py-1.5 text-sm font-semibold flex items-center h-full">
-                    ${cuotaOrdinariaMonto.toLocaleString('es-CO', {maximumFractionDigits: 0})}
-                  </div>
-                )}
+                <label className="text-xs font-medium">Valor Cuota Mensual</label>
+                <div className="border border-border bg-muted/50 rounded-md px-2 py-1.5 text-sm font-semibold flex items-center h-full">
+                  ${cuotaOrdinariaMonto.toLocaleString('es-CO', {maximumFractionDigits: 0})}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* 3. Extraordinarias (Solo para Compraventa) */}
-          {tipoContrato !== 'Arrendamiento' && (
-            <div className="space-y-4 pt-4 border-t border-border/50">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold uppercase text-muted-foreground">3. Cuotas Extraordinarias / Refuerzos</h4>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={tieneExtraordinarias} onChange={(e) => setTieneExtraordinarias(e.target.checked)} />
-                  <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
-                </label>
-              </div>
-              
-              {tieneExtraordinarias && (
-                <div className="bg-background border border-border p-3 rounded-md space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div className="flex flex-col gap-1.5 md:col-span-1">
-                      <label className="text-xs font-medium">Frecuencia</label>
-                      <select 
-                        value={frecuenciaExtraordinaria}
-                        onChange={(e) => setFrecuenciaExtraordinaria(e.target.value)}
-                        className="border border-border bg-background rounded-md px-2 py-1.5 text-sm"
-                      >
-                        <option value="Bimensual">Bimensual</option>
-                        <option value="Trimestral">Trimestral</option>
-                        <option value="Semestral">Semestral</option>
-                        <option value="Anual">Anual</option>
-                        <option value="Personalizada">Personalizada</option>
-                      </select>
-                    </div>
-                    
-                    {frecuenciaExtraordinaria !== 'Personalizada' && (
-                      <>
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-medium">Monto por Refuerzo</label>
-                          <input 
-                            type="number" 
-                            value={montoCuotaExtraordinaria === "" ? "" : montoCuotaExtraordinaria}
-                            onChange={(e) => setMontoCuotaExtraordinaria(e.target.value === "" ? "" : Number(e.target.value))}
-                            className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-medium">Cantidad de Refuerzos</label>
-                          <input 
-                            type="number" 
-                            value={numeroCuotasExtraordinarias === "" ? "" : numeroCuotasExtraordinarias}
-                            onChange={(e) => setNumeroCuotasExtraordinarias(e.target.value === "" ? "" : Number(e.target.value))}
-                            className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-medium">Fecha de Inicio</label>
-                          <input 
-                            type="date" 
-                            value={fechaInicioExtraordinarias}
-                            onChange={(e) => setFechaInicioExtraordinarias(e.target.value)}
-                            className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
-                          />
-                        </div>
-                      </>
-                    )}
+          {/* 3. Extraordinarias */}
+          <div className="space-y-4 pt-4 border-t border-border/50">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase text-muted-foreground">3. Cuotas Extraordinarias / Refuerzos</h4>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={tieneExtraordinarias} onChange={(e) => setTieneExtraordinarias(e.target.checked)} />
+                <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+              </label>
+            </div>
+            
+            {tieneExtraordinarias && (
+              <div className="bg-background border border-border p-3 rounded-md space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="flex flex-col gap-1.5 md:col-span-1">
+                    <label className="text-xs font-medium">Frecuencia</label>
+                    <select 
+                      value={frecuenciaExtraordinaria}
+                      onChange={(e) => setFrecuenciaExtraordinaria(e.target.value)}
+                      className="border border-border bg-background rounded-md px-2 py-1.5 text-sm"
+                    >
+                      <option value="Bimensual">Bimensual</option>
+                      <option value="Trimestral">Trimestral</option>
+                      <option value="Semestral">Semestral</option>
+                      <option value="Anual">Anual</option>
+                      <option value="Personalizada">Personalizada</option>
+                    </select>
                   </div>
-
-                  {frecuenciaExtraordinaria === 'Personalizada' && (
-                    <div className="space-y-3 pt-2 border-t border-border/50">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium">Lista de Refuerzos Manuales</span>
-                        <button 
-                          onClick={addExtraordinaria}
-                          className="text-xs font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-500/10 px-2 py-1 rounded"
-                        >
-                          + Agregar Fila
-                        </button>
+                  
+                  {frecuenciaExtraordinaria !== 'Personalizada' && (
+                    <>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium">Monto por Refuerzo</label>
+                        <input 
+                          type="number" 
+                          value={montoCuotaExtraordinaria === "" ? "" : montoCuotaExtraordinaria}
+                          onChange={(e) => setMontoCuotaExtraordinaria(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
+                        />
                       </div>
-                      
-                      {cuotasExtraordinarias.map((extra, idx) => (
-                        <div key={extra.id} className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-                            <input 
-                              type="text" 
-                              value={extra.concepto}
-                              onChange={(e) => updateExtraordinaria(extra.id, "concepto", e.target.value)}
-                              placeholder="Concepto (Ej. Refuerzo Diciembre)"
-                              className="border border-border rounded px-2 py-1.5 text-xs w-full bg-background"
-                            />
-                          </div>
-                          <div className="col-span-6 md:col-span-3 flex flex-col gap-1">
-                            <input 
-                              type="number" 
-                              value={extra.monto === "" ? "" : extra.monto}
-                              onChange={(e) => updateExtraordinaria(extra.id, "monto", e.target.value === "" ? "" : Number(e.target.value))}
-                              placeholder="Monto"
-                              className="border border-border rounded px-2 py-1.5 text-xs w-full bg-background"
-                            />
-                          </div>
-                          <div className="col-span-5 md:col-span-4 flex flex-col gap-1">
-                            <input 
-                              type="date" 
-                              value={extra.fecha}
-                              onChange={(e) => updateExtraordinaria(extra.id, "fecha", e.target.value)}
-                              className="border border-border rounded px-2 py-1.5 text-xs w-full bg-background"
-                            />
-                          </div>
-                          <div className="col-span-1 flex justify-end pb-1.5">
-                            <button onClick={() => removeExtraordinaria(extra.id)} className="text-muted-foreground hover:text-destructive">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      {cuotasExtraordinarias.length === 0 && (
-                        <p className="text-xs text-muted-foreground italic text-center py-2">No hay pagos extraordinarios configurados.</p>
-                      )}
-                    </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium">Cantidad de Refuerzos</label>
+                        <input 
+                          type="number" 
+                          value={numeroCuotasExtraordinarias === "" ? "" : numeroCuotasExtraordinarias}
+                          onChange={(e) => setNumeroCuotasExtraordinarias(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium">Fecha de Inicio</label>
+                        <input 
+                          type="date" 
+                          value={fechaInicioExtraordinarias}
+                          onChange={(e) => setFechaInicioExtraordinarias(e.target.value)}
+                          className="border border-border bg-background rounded-md px-2 py-1.5 text-sm" 
+                        />
+                      </div>
+                    </>
                   )}
                 </div>
-              )}
-            </div>
-          )}
+
+                {frecuenciaExtraordinaria === 'Personalizada' && (
+                  <div className="space-y-3 pt-2 border-t border-border/50">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">Lista de Refuerzos Manuales</span>
+                      <button 
+                        onClick={addExtraordinaria}
+                        className="text-xs font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-500/10 px-2 py-1 rounded"
+                      >
+                        + Agregar Fila
+                      </button>
+                    </div>
+                    
+                    {cuotasExtraordinarias.map((extra, idx) => (
+                      <div key={extra.id} className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
+                          <input 
+                            type="text" 
+                            value={extra.concepto}
+                            onChange={(e) => updateExtraordinaria(extra.id, "concepto", e.target.value)}
+                            placeholder="Concepto (Ej. Refuerzo Diciembre)"
+                            className="border border-border rounded px-2 py-1.5 text-xs w-full bg-background"
+                          />
+                        </div>
+                        <div className="col-span-6 md:col-span-3 flex flex-col gap-1">
+                          <input 
+                            type="number" 
+                            value={extra.monto === "" ? "" : extra.monto}
+                            onChange={(e) => updateExtraordinaria(extra.id, "monto", e.target.value === "" ? "" : Number(e.target.value))}
+                            placeholder="Monto"
+                            className="border border-border rounded px-2 py-1.5 text-xs w-full bg-background"
+                          />
+                        </div>
+                        <div className="col-span-5 md:col-span-4 flex flex-col gap-1">
+                          <input 
+                            type="date" 
+                            value={extra.fecha}
+                            onChange={(e) => updateExtraordinaria(extra.id, "fecha", e.target.value)}
+                            className="border border-border rounded px-2 py-1.5 text-xs w-full bg-background"
+                          />
+                        </div>
+                        <div className="col-span-1 flex justify-end pb-1.5">
+                          <button onClick={() => removeExtraordinaria(extra.id)} className="text-muted-foreground hover:text-destructive">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {cuotasExtraordinarias.length === 0 && (
+                      <p className="text-xs text-muted-foreground italic text-center py-2">No hay pagos extraordinarios configurados.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           
           {/* Financial Totals UI */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-border/50 pt-4 mt-2">
             <div className="p-3 bg-muted/20 border border-border rounded-md">
-              <span className="text-xs font-semibold text-muted-foreground uppercase block">
-                {tipoContrato === 'Arrendamiento' ? "Total Cánones (12 Meses)" : "Precio Contado"}
-              </span>
-              <span className="text-lg font-bold">
-                ${(tipoContrato === 'Arrendamiento' 
-                  ? ((Number(montoCuotaOrdinaria) || 0) * (Number(cuotaOrdinariaPagos) || 12))
-                  : targetTotal
-                ).toLocaleString('es-CO')}
-              </span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase block">Precio Contado</span>
+              <span className="text-lg font-bold">${targetTotal.toLocaleString('es-CO')}</span>
             </div>
             <div className="p-3 bg-muted/20 border border-border rounded-md">
-              <span className="text-xs font-semibold text-muted-foreground uppercase block">
-                {tipoContrato === 'Arrendamiento' ? "Depósito Garantía (Servicios)" : "Total Intereses"}
-              </span>
-              <span className="text-lg font-bold">
-                ${(tipoContrato === 'Arrendamiento' 
-                  ? cIniMontoTotal 
-                  : totalInterest
-                ).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-              </span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase block">Total Intereses</span>
+              <span className="text-lg font-bold">${totalInterest.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
             </div>
             <div className="p-3 bg-primary/10 border border-primary/20 rounded-md">
-              <span className="text-xs font-semibold text-primary uppercase block">
-                {tipoContrato === 'Arrendamiento' ? "Total Plan (Cánones + Depósito)" : "Valor Final Financiado"}
-              </span>
-              <span className="text-lg font-bold text-primary">
-                ${(tipoContrato === 'Arrendamiento' 
-                  ? targetTotal 
-                  : financedTotal
-                ).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-              </span>
+              <span className="text-xs font-semibold text-primary uppercase block">Valor Final Financiado</span>
+              <span className="text-lg font-bold text-primary">${financedTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
             </div>
           </div>
           
@@ -1037,43 +1041,36 @@ export function DynamicContract() {
             isValidPlan ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700' : 'bg-destructive/10 border-destructive/20 text-destructive'
           }`}>
             <div className="flex flex-col">
-              <span className="text-xs font-semibold uppercase">
-                {tipoContrato === 'Arrendamiento' ? "Validación del Plan de Cánones" : "Validación del Plan (Capital)"}
-              </span>
+              <span className="text-xs font-semibold uppercase">Validación del Plan (Capital)</span>
               <span className="text-sm">
-                {tipoContrato === 'Arrendamiento'
-                  ? `Cánones Proyectados: $${plannedTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })} / Total Contrato: $${targetTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`
-                  : `Capital Proyectado: $${plannedTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })} / Precio Contado: $${targetTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`
-                }
+                Capital Proyectado: ${plannedTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })} / Precio Contado: ${targetTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })}
               </span>
             </div>
             {!isValidPlan && (
               <div className="text-right">
-                <span className="text-xs font-semibold block">Diferencia</span>
+                <span className="text-xs font-semibold block">Diferencia Capital</span>
                 <span className="font-bold text-sm">${Math.abs(difference).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
               </div>
             )}
             {isValidPlan && (
               <div className="text-xs font-bold bg-emerald-500 text-white px-2 py-1 rounded">
-                PLAN CUADRADO
+                CAPITAL CUADRADO
               </div>
             )}
           </div>
         </div>
 
         <div className="border-t border-border pt-4 space-y-4">
-          {tipoContrato !== 'Arrendamiento' && (
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-medium">Con Intereses Corrientes</h4>
-                <p className="text-xs text-muted-foreground">Aplicar tasa de financiación</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={withInterest} onChange={(e) => setWithInterest(e.target.checked)} />
-                <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-medium">Con Intereses Corrientes</h4>
+              <p className="text-xs text-muted-foreground">Aplicar tasa de financiación</p>
             </div>
-          )}
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={withInterest} onChange={(e) => setWithInterest(e.target.checked)} />
+              <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
 
           {withInterest && (
             <div className="flex flex-col gap-2 animate-accordion-down">
@@ -1120,7 +1117,7 @@ export function DynamicContract() {
               Generando contrato...
             </>
           ) : (
-            "Generar Borrador de Contrato"
+            "Guardar Cambios del Contrato"
           )}
         </button>
       </div>
@@ -1178,7 +1175,9 @@ export function DynamicContract() {
           </div>
         </div>
       </div>
-
+      </div>
+      </div>
+      </div>
       <ClientModal 
         isOpen={isClientModalOpen}
         onClose={() => setIsClientModalOpen(false)}
@@ -1191,8 +1190,9 @@ export function DynamicContract() {
           if (activeParticipantId && newClient.id) {
             handleSelectClient(activeParticipantId, newClient.id);
           }
+          setIsClientModalOpen(false);
         }}
       />
-    </div>
+    </>
   );
 }

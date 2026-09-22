@@ -61,6 +61,7 @@ export function InmuebleModal({ isOpen, onClose, onSave, inmuebleToEdit }: Inmue
       }
     }
     fetchProyectos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompany?.id, inmuebleToEdit]);
 
   useEffect(() => {
